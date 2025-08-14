@@ -1,0 +1,68 @@
+﻿@model SpotifyApi.Models.RecommendViewModel
+@{
+    ViewData["Title"] = "Home Page";
+    var profile = Model?.Profile;
+}
+
+<div class="text-center mb-4">
+    <h1 class="display-5">Welcome</h1>
+    @if (profile is not null)
+    {
+        <p class="text-muted">
+            Signed in as <strong>@(profile.HasValue ? profile.Value.GetProperty("display_name").GetString() : "")</strong>
+        </p>
+    }
+    else
+    {
+        <div class="alert alert-info d-inline-block">
+            <a class="btn btn-primary" href="/login">Login with Spotify</a>
+            <span class="ms-2">to get personalized picks.</span>
+        </div>
+    }
+</div>
+
+@if (profile is not null && profile.HasValue)
+{
+    <h4>Your Top Tracks</h4>
+    <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-3 mb-4">
+        @foreach (var t in Model.Top)
+        {
+            <div class="col">
+                <div class="card h-100 shadow-sm">
+                    <img class="card-img-top" src="@t.AlbumArtUrl" alt="@t.Name" />
+                    <div class="card-body">
+                        <div class="fw-semibold">@t.Name</div>
+                        <div class="text-muted small">@string.Join(", ", t.Artists)</div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <h4>Recommended For You</h4>
+    @if (Model.Recs != null && Model.Recs.Count > 0)
+    {
+        <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-3">
+            @foreach (var r in Model.Recs)
+            {
+                <div class="col">
+                    <div class="card h-100 shadow-sm">
+                        <img class="card-img-top" src="@r.AlbumArtUrl" alt="@r.Name" />
+                        <div class="card-body">
+                            <div class="fw-semibold">@r.Name</div>
+                            <div class="text-muted small">@string.Join(", ", r.Artists)</div>
+                            @if (!string.IsNullOrEmpty(r.PreviewUrl))
+                            {
+                                <audio controls preload="none" style="width:100%;" src="@r.PreviewUrl"></audio>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-warning">No recommendations available. Try listening to more music or check your Spotify account.</div>
+    }
+}
