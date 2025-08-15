@@ -1,0 +1,65 @@
+@model SpotifyApi.Models.DiscoveryViewModel
+@{
+    ViewData["Title"] = "Discovery";
+    var profile = Model.Profile;
+}
+<h2 class="mb-3">Discovery</h2>
+@if (profile is null || !profile.HasValue)
+{
+    <div class="alert alert-info">Sign in to see discovery recommendations.</div>
+}
+else
+{
+    <div class="mb-2 small text-muted">@Model.Debug</div>
+    <h5 class="mt-4">Top Tracks Basis</h5>
+    <div class="row row-cols-2 row-cols-md-4 g-2 mb-4">
+        @foreach(var t in Model.Top)
+        {
+            <div class="col">
+                <div class="card h-100">
+                    <img class="card-img-top" src="@t.AlbumArtUrl" alt="@t.Name" />
+                    <div class="card-body p-2">
+                        <div class="small fw-semibold">@t.Name</div>
+                        <div class="text-muted small">@string.Join(", ", t.Artists)</div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+    <h5>Discovery Picks (@Model.Items.Count)</h5>
+    @if(Model.Items.Count==0){<div class="alert alert-warning">No discovery results.</div>} else {
+    <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-3">
+        @foreach(var item in Model.Items)
+        {
+            var reasons = item.Reasons ?? Array.Empty<string>();
+            bool isNew = reasons.Contains("new-to-you");
+            bool isSeen = reasons.Contains("already-played");
+            bool isFallback = reasons.Contains("fallback-known");
+            <div class="col">
+                <div class="card h-100 shadow-sm">
+                    <img class="card-img-top" src="@item.Track.AlbumArtUrl" alt="@item.Track.Name" />
+                    <div class="card-body">
+                        <div class="fw-semibold">
+                            @item.Track.Name
+                            @if (isNew) { <span class="badge bg-success ms-1">NEW</span> }
+                            else if (isSeen) { <span class="badge bg-secondary ms-1">Seen</span> }
+                            @if (isFallback) { <span class="badge bg-warning text-dark ms-1">Fallback</span> }
+                        </div>
+                        <div class="text-muted small">@string.Join(", ", item.Track.Artists)</div>
+                        <div class="small mt-1">Score: @item.Score.ToString("0.00")</div>
+                        <div class="mt-2" style="min-height:1.8rem;">
+                            @foreach (var r in reasons.Where(r => r == "artist-top" || r == "related-artist" || r == "seed-track"))
+                            {
+                                <span class="badge bg-info text-dark me-1 mb-1">@r</span>
+                            }
+                        </div>
+                        @if(!string.IsNullOrEmpty(item.Track.PreviewUrl)){
+                            <audio controls preload="none" style="width:100%;" src="@item.Track.PreviewUrl"></audio>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+    }
+}

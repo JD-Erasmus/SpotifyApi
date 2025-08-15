@@ -23,6 +23,10 @@
 
 @if (profile is not null && profile.HasValue)
 {
+    <div class="mb-3 small text-muted">
+        <span class="d-block"><strong>Debug:</strong> @Model.DebugInfo</span>
+    </div>
+
     <h4>Your Top Tracks</h4>
     <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-3 mb-4">
         @foreach (var t in Model.Top)
@@ -39,7 +43,7 @@
         }
     </div>
 
-    <h4>Recommended For You</h4>
+    <h4>Discovery Picks</h4>
     @if (Model.Recs != null && Model.Recs.Count > 0)
     {
         <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-3">
@@ -63,6 +67,6 @@
     }
     else
     {
-        <div class="alert alert-warning">No recommendations available. Try listening to more music or check your Spotify account.</div>
+        <div class="alert alert-warning">No discovery recommendations available.</div>
     }
 }

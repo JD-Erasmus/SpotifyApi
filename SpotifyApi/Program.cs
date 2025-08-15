@@ -4,9 +4,9 @@ using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using SpotifyApi.Data;
+using SpotifyApi.Services;
 using System.Security.Claims;
 using System.Text.Json;
-
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -17,7 +17,8 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(connectionString));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
-builder.Services.AddHttpClient<SpotifyApi.Services.ISpotifyApiClient, SpotifyApi.Services.SpotifyApiClient>();
+builder.Services.AddHttpClient<ISpotifyApiClient, SpotifyApiClient>();
+builder.Services.AddScoped<IDiscoveryRecommender, DiscoveryRecommender>();
 
 
 builder.Services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.RequireConfirmedAccount = true)
@@ -60,13 +61,69 @@ builder.Services
         {
             OnCreatingTicket = async ctx =>
             {
-                using var req = new HttpRequestMessage(HttpMethod.Get, options.UserInformationEndpoint);
-                req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ctx.AccessToken);
-                using var resp = await ctx.Backchannel.SendAsync(req);
-                resp.EnsureSuccessStatusCode();
+                var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("SpotifyOAuth");
 
-                using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-                ctx.RunClaimActions(doc.RootElement);
+                // Retry fetching the user profile a few times in case Spotify transiently returns 5xx (e.g. 502 Bad Gateway)
+                const int maxAttempts = 3;
+                JsonDocument? doc = null;
+                for (var attempt = 1; attempt <= maxAttempts; attempt++)
+                {
+                    try
+                    {
+                        using var req = new HttpRequestMessage(HttpMethod.Get, options.UserInformationEndpoint);
+                        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ctx.AccessToken);
+                        using var resp = await ctx.Backchannel.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ctx.HttpContext.RequestAborted);
+
+                        if (!resp.IsSuccessStatusCode)
+                        {
+                            // Log and retry on 5xx, fail immediately on 4xx
+                            if ((int)resp.StatusCode >= 500 && attempt < maxAttempts)
+                            {
+                                logger.LogWarning("Spotify user info attempt {Attempt} failed with {Status}. Retrying...", attempt, resp.StatusCode);
+                                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), ctx.HttpContext.RequestAborted);
+                                continue;
+                            }
+                            resp.EnsureSuccessStatusCode(); // will throw for non-success (4xx or last 5xx)
+                        }
+
+                        var payload = await resp.Content.ReadAsStringAsync(ctx.HttpContext.RequestAborted);
+                        doc = JsonDocument.Parse(payload);
+                        break; // success
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw; // Propagate cancellations
+                    }
+                    catch (Exception ex)
+                    {
+                        if (attempt >= maxAttempts)
+                        {
+                            logger.LogError(ex, "Failed to retrieve Spotify user profile after {Attempts} attempts.", maxAttempts);
+                        }
+                        else
+                        {
+                            logger.LogWarning(ex, "Error retrieving Spotify profile on attempt {Attempt}/{Max}; retrying...", attempt, maxAttempts);
+                            await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), ctx.HttpContext.RequestAborted);
+                        }
+                    }
+                }
+
+                if (doc is null)
+                {
+                    // Do not fail the whole auth if profile fetch failed; proceed without mapped claims.
+                    logger.LogWarning("Proceeding without Spotify user profile claims (profile fetch failed).");
+                    return; // no claims mapped
+                }
+
+                try
+                {
+                    ctx.RunClaimActions(doc.RootElement);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error mapping Spotify claims.");
+                }
             }
         };
     });
